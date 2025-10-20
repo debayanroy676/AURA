@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import os
 import google.generativeai as genai
 
+# Load environment variables
 load_dotenv()
 genai.configure(api_key=os.getenv("API_KEY"))
 
@@ -11,14 +12,14 @@ You are AURA — an Agentic AI Study & Research Assistant designed to guide univ
 
 ### Your Primary Roles:
 1. **Topic Research & Summarization**
-   - Accept a topic, the user's course, and university name.
+   - Accept a topic, the user's course
    - Identify 5 (or more, as specified) best books related to the topic at the user’s course level.
    - Extract detailed information from each book’s relevant sections.
    - Summarize all information into a **short, cohesive descriptive passage** while preserving every meaningful detail.
    - If the user prefers **book-wise segregation**, present it as:
      ```
-     \nAccording to <Book A>: <Summary from A>
-     \nAccording to <Book B>: <Summary from B>
+     According to <Book A>: <Summary from A>
+     According to <Book B>: <Summary from B>
      ```
    - Maintain academic accuracy, clarity, and reference authenticity.
 
@@ -36,12 +37,12 @@ You are AURA — an Agentic AI Study & Research Assistant designed to guide univ
     When the user explicitly requests an animation or visual explanation,
     output the animation plan as **structured JSON**, not plain text.
     Please dont write corresponding text explaination/general communication it will make it difficult for the frontend to read, instead just Use this form :
-    \n{
-    \n   "scene": [
-    \n      {"id": 1, "title": "Intro", "narration": "...", "visual": "..."},
-    \n       {"id": 2, "title": "Concept", "narration": "...", "visual": "..."}
-    \n    ]
-    \n}
+    {
+       "scene": [
+          {"id": 1, "title": "Intro", "narration": "...", "visual": "..."},
+          {"id": 2, "title": "Concept", "narration": "...", "visual": "..."}
+        ]
+    }
     Do NOT use markdown, asterisks, or decorative formatting.
  
 5. **Book Recommendation System**
@@ -83,6 +84,7 @@ Now begin every session by confirming the user's purpose (study/research/roadmap
 Then respond precisely as per this role description.
 """
 
+
 model = genai.GenerativeModel(
     model_name="gemini-2.5-flash",
     system_instruction=system_prompt
@@ -90,14 +92,56 @@ model = genai.GenerativeModel(
 
 app = Flask(__name__)
 
+
 @app.route("/", methods=["GET", "POST"])
 def home():
     response = ""
     if request.method == "POST":
         user_input = request.form["user_input"]
         response = model.generate_content(user_input).text
-        return render_template("index.html", response=response)
+        formatted_response =response.replace("\n", "<br>")
+        return render_template("index.html", response=formatted_response)
     return render_template("index.html", response=response)
+
+
+@app.route("/generate_animation", methods=["POST"])
+def generate_animation():
+    """
+    Accepts a JSON payload like: {"topic": "Quantum Entanglement"}
+    Returns a structured JSON animation plan as defined in system_prompt.
+    """
+
+    data = request.get_json()
+    topic = data.get("topic")
+
+    if not topic:
+        return jsonify({"error": "Missing 'topic' parameter"}), 400
+
+    animation_prompt = f"""
+    The user has requested a visual animation plan for the topic: "{topic}".
+    According to your visual output rule, respond ONLY in valid JSON format:
+    {{
+        "scene": [
+            {{"id": 1, "title": "Intro", "narration": "...", "visual": "..."}},
+            {{"id": 2, "title": "Concept", "narration": "...", "visual": "..."}}
+        ]
+    }}
+    Avoid any markdown, explanations, or extra text.
+    """
+
+    try:
+        result = model.generate_content(animation_prompt)
+        text = result.text.strip()
+
+        # Attempt to extract valid JSON safely
+        if text.startswith("```"):
+            text = text.strip("`").replace("json", "").strip()
+
+        return jsonify(text)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
 if __name__ == "__main__":
     app.run(debug=True)
-
