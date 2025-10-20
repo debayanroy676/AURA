@@ -1,26 +1,173 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8">
     <title>AURA — Your Research Assistant</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 900px; margin: 2rem auto; }
-        textarea { width: 100%; height: 140px; }
-        label { display:block; margin-top: 0.5rem; }
-        input, select { padding: 6px; }
-        .small { width: 120px; }
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 1rem;
+            background: #f8f9fa;
+        }
+        h1 { text-align: center; color: #333; }
+        textarea {
+            width: 100%;
+            height: 140px;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            resize: vertical;
+            font-size: 15px;
+        }
+        button {
+            background-color: #0066ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover { background-color: #0047b3; }
+
+        #response-box, #animation-box {
+            background: white;
+            margin-top: 2rem;
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background: #f2f2f2;
+            padding: 10px;
+            border-radius: 6px;
+        }
+        #text-response {
+            line-height: 1.7;
+            font-size: 15px;
+            color: #222;
+        }
+        #text-response code {
+            background: #f3f3f3;
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        #text-response sup { font-size: 0.8em; vertical-align: super; }
+        #text-response sub { font-size: 0.8em; vertical-align: sub; }
     </style>
+
+    <!-- MathJax for LaTeX rendering -->
+    <script>
+        window.MathJax = {
+            tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+            svg: { fontCache: 'global' }
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
 </head>
 <body>
-    <h1>Welcome, I am AURA</h1>
+    <h1>Welcome, I am AURA 🌐</h1>
 
-    <form method="POST">
+    <form id="text-form" method="POST">
         <textarea name="user_input" placeholder="Enter your text here..."></textarea><br>
         <button type="submit">Submit</button>
     </form>
-    {% if response %}
+
+    <hr>
+
+    <h2>🎬 Generate Animation</h2>
+    <input id="animation-topic" type="text" placeholder="Enter topic for animation" style="width:70%; padding:8px; border-radius:6px; border:1px solid #ccc;">
+    <button id="generate-btn">Generate Animation</button>
+
+    <!-- Response Box -->
+    <div id="response-box">
+        {% if response %}
         <h2>Response:</h2>
-        <p>{{ response }}</p>
-    {% endif %}
+        <div id="text-response">{{ response | safe }}</div>
+        {% endif %}
+    </div>
+
+    <!-- Animation Box -->
+    <div id="animation-box" style="display:none;">
+        <h2>Animation Plan:</h2>
+        <pre id="animation-output"></pre>
+    </div>
+
+    <!-- Main Formatting Script -->
+    <script>
+    function formatResponse(raw) {
+        const latexRegex = /(\$\$[\s\S]+?\$\$|\$[^\$]+?\$)/g;
+        const parts = raw.split(latexRegex);
+
+        return parts.map(part => {
+            if (part.match(latexRegex)) {
+                return part; // leave LaTeX untouched
+            }
+            return part
+                .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+                .replace(/\*(.*?)\*/g, '<i>$1</i>')
+                .replace(/\^(\S+?)/g, '<sup>$1</sup>')
+                .replace(/~(\S+?)/g, '<sub>$1</sub>')
+                .replace(/\n/g, '<br>');
+        }).join('');
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+        const box = document.getElementById("text-response");
+        if (!box) return;
+
+        box.innerHTML = formatResponse(box.innerHTML);
+
+        if (window.MathJax) {
+            MathJax.typesetPromise([box]);
+        }
+    });
+    </script>
+
+    <!-- Animation Script -->
+    <script>
+    document.getElementById("generate-btn").addEventListener("click", async () => {
+        const topic = document.getElementById("animation-topic").value.trim();
+        if (!topic) {
+            alert("Please enter a topic!");
+            return;
+        }
+
+        const btn = document.getElementById("generate-btn");
+        btn.disabled = true;
+        btn.textContent = "Generating...";
+
+        try {
+            const res = await fetch("/generate_animation", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ topic })
+            });
+
+            const data = await res.json();
+            const outputBox = document.getElementById("animation-output");
+            const container = document.getElementById("animation-box");
+
+            container.style.display = "block";
+            if (data.error) {
+                outputBox.textContent = "Error: " + data.error;
+            } else {
+                let jsonText = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+                outputBox.textContent = jsonText;
+            }
+        } catch (err) {
+            alert("Error fetching animation: " + err);
+        }
+
+        btn.disabled = false;
+        btn.textContent = "Generate Animation";
+    });
+    </script>
 </body>
 </html>
