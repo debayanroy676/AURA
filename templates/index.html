@@ -101,31 +101,32 @@
     </div>
 
     <!-- Main Formatting Script -->
-    <script>
-    function formatResponse(raw) {
-        const latexRegex = /(\$\$[\s\S]+?\$\$|\$[^\$]+?\$)/g;
-        const parts = raw.split(latexRegex);
+    
+<script>
+// Function to convert Markdown, links, superscripts/subscripts
+function formatResponse(raw) {
+    let formatted = raw;
 
-        return parts.map(part => {
-            if (part.match(latexRegex)) {
-                return part; // leave LaTeX untouched
-            }
-         part = part.replace(/^###### (.*)$/gm, '<h6>$1</h6>')
-                    .replace(/^##### (.*)$/gm, '<h5>$1</h5>')
-                    .replace(/^#### (.*)$/gm, '<h4>$1</h4>')
-                    .replace(/^### (.*)$/gm, '<h3>$1</h3>')
-                    .replace(/^## (.*)$/gm, '<h2>$1</h2>')
-                    .replace(/^# (.*)$/gm, '<h1>$1</h1>');
-         part = part.replace(/\n/g, '<br>')
-                    .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-                    .replace(/\*(.*?)\*/g, '<i>$1</i>')
-                    .replace(/\^(\S+?)/g, '<sup>$1</sup>')
-                    .replace(/~(\S+?)/g, '<sub>$1</sub>')
-                    .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank">$1</a>')
-                    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-        }).join('');
+    // Headers
+        formatted = formatted
+            .replace(/^###### (.*)$/gm, '<h6>$1</h6>')
+            .replace(/^##### (.*)$/gm, '<h5>$1</h5>')
+            .replace(/^#### (.*)$/gm, '<h4>$1</h4>')
+            .replace(/^### (.*)$/gm, '<h3>$1</h3>')
+            .replace(/^## (.*)$/gm, '<h2>$1</h2>')
+            .replace(/^# (.*)$/gm, '<h1>$1</h1>');
+        // Bold and Italic
+        formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+                             .replace(/\*(.*?)\*/g, '<i>$1</i>');
+        // Superscript / Subscript
+        formatted = formatted.replace(/\^([^\^]+)\^/g, '<sup>$1</sup>')
+                             .replace(/~([^~]+)~/g, '<sub>$1</sub>');
+        // Links
+        formatted = formatted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+        // Line breaks
+        formatted = formatted.replace(/\n/g, '<br>');
+        return formatted;
     }
-
     document.addEventListener("DOMContentLoaded", () => {
         const box = document.getElementById("text-response");
         if (!box) return;
