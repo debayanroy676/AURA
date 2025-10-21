@@ -121,7 +121,9 @@
                 .replace(/^####\s*(.*)$/gm, '<h4>$1</h4>')
                 .replace(/^###\s*(.*)$/gm, '<h3>$1</h3>')
                 .replace(/^##\s*(.*)$/gm, '<h2>$1</h2>')
-                .replace(/^#\s*(.*)$/gm, '<h1>$1</h1>');
+                .replace(/^#\s*(.*)$/gm, '<h1>$1</h1>')
+                .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank">$1</a>')
+                .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
         }).join('');
     }
 
