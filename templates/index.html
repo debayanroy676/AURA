@@ -115,13 +115,13 @@
                 .replace(/\*(.*?)\*/g, '<i>$1</i>')
                 .replace(/\^(\S+?)/g, '<sup>$1</sup>')
                 .replace(/~(\S+?)/g, '<sub>$1</sub>')
-                .replace(/\n/g, '<br>')
                 .replace(/^###### (.*)$/gm, '<h6>$1</h6>')
                 .replace(/^##### (.*)$/gm, '<h5>$1</h5>')
                 .replace(/^#### (.*)$/gm, '<h4>$1</h4>')
                 .replace(/^### (.*)$/gm, '<h3>$1</h3>')
                 .replace(/^## (.*)$/gm, '<h2>$1</h2>')
                 .replace(/^# (.*)$/gm, '<h1>$1</h1>')
+                .replace(/\n/g, '<br>')
                 .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank">$1</a>')
                 .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
         }).join('');
