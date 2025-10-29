@@ -1,12 +1,66 @@
+
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 import os
 import google.generativeai as genai
+from sentence_transformers import SentenceTransformer
+import chromadb
+from PyPDF2 import PdfReader
+from PIL import Image
+import pytesseract
 
-# Load environment variables
+# === Load Environment Variables ===
 load_dotenv()
 genai.configure(api_key=os.getenv("API_KEY"))
 
+# === Initialize Flask ===
+app = Flask(__name__)
+
+# === Initialize Chroma Vector Database ===
+chroma_client = chromadb.PersistentClient(path="./aura_knowledgebase")
+collection = chroma_client.get_or_create_collection("aura_docs")
+embedder = SentenceTransformer("all-MiniLM-L6-v2")
+
+# === In-memory Chat History ===
+chat_history = []  # stores tuples of (user_message, model_response)
+MAX_HISTORY = 100  # retain only last 100 messages
+
+
+# === Text Preprocessing and Embedding ===
+def chunk_text(text, chunk_size=1000, overlap=200):
+    """Split long text into overlapping chunks for better retrieval."""
+    words = text.split()
+    chunks = []
+    start = 0
+    while start < len(words):
+        end = min(start + chunk_size, len(words))
+        chunk = " ".join(words[start:end])
+        chunks.append(chunk)
+        start += chunk_size - overlap
+    return chunks
+
+
+def add_to_knowledge_base(text, source_name):
+    chunks = chunk_text(text)
+    for chunk in chunks:
+        embedding = embedder.encode([chunk])[0].tolist()
+        collection.add(
+            documents=[chunk],
+            embeddings=[embedding],
+            metadatas=[{"source": source_name}]
+        )
+
+
+# === Retrieve Relevant Knowledge ===
+def retrieve_relevant_chunks(query, k=3):
+    embedding = embedder.encode([query])[0].tolist()
+    results = collection.query(query_embeddings=[embedding], n_results=k)
+    if not results["documents"] or not results["documents"][0]:
+        return ""
+    return "\n\n".join(results["documents"][0])
+
+
+# === System Prompt ===
 
 system_prompt = """
 You are AURA — an Agentic AI Study and Research assistant designed to guide students, researchers through academic topics with precision, clarity, and empathy.
@@ -104,28 +158,67 @@ Imagine a spring that loves to dance...
 Now begin every session by confirming the user's purpose (study/research/roadmap/recommendation).
 Then respond precisely as per this role description.
 """
-
+# === Initialize Gemini Model ===
 model = genai.GenerativeModel(
     model_name="gemini-2.5-pro",
     system_instruction=system_prompt
 )
 
-app = Flask(__name__)
 
-
+# === Flask Routes ===
 @app.route("/", methods=["GET", "POST"])
 def home():
+    global chat_history
     response = ""
+
     if request.method == "POST":
         user_input = request.form["user_input"]
-        response = model.generate_content(user_input).text
-        formatted_response =response.replace("\n", "<br>")
-        return render_template("index.html", response=formatted_response)
+
+        # Step 1: Retrieve relevant context from vector DB
+        doc_context = retrieve_relevant_chunks(user_input)
+
+        # Step 2: Build structured message history for Gemini
+        messages = []
+        for user_msg, bot_msg in chat_history[-MAX_HISTORY:]:
+            messages.append({"role": "user", "parts": [{"text": user_msg}]})
+            messages.append({"role": "model", "parts": [{"text": bot_msg}]})
+
+        # Step 3: Add current user query and knowledge base context
+        messages.append({
+            "role": "user",
+            "parts": [
+                {
+                    "text": f"[Knowledge Base Context]\n{doc_context}\n\n[User Query]\n{user_input}"
+                }
+            ]
+        })
+
+        try:
+            # Step 4: Generate response with conversation memory
+            chat = model.start_chat(history=messages)
+            ai_response = chat.send_message(user_input).text
+
+        except Exception as e:
+            ai_response = f"Error: {e}"
+
+        # Step 5: Update in-memory chat log
+        chat_history.append((user_input, ai_response))
+        if len(chat_history) > MAX_HISTORY:
+            chat_history = chat_history[-MAX_HISTORY:]
+
+        response = ai_response.replace("\n", "<br>")
+        return render_template("index.html", response=response)
+
     return render_template("index.html", response=response)
+
+
+# === Optional route to clear chat history ===
+@app.route("/clear_history", methods=["POST"])
+def clear_history():
+    global chat_history
+    chat_history.clear()
+    return jsonify({"message": "Chat history cleared."})
 
 
 if __name__ == "__main__":
     app.run(debug=True)
-
-
-
