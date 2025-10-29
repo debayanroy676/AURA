@@ -5,10 +5,6 @@ import os
 import google.generativeai as genai
 from sentence_transformers import SentenceTransformer
 import chromadb
-from PyPDF2 import PdfReader
-from PIL import Image
-import pytesseract
-
 # === Load Environment Variables ===
 load_dotenv()
 genai.configure(api_key=os.getenv("API_KEY"))
