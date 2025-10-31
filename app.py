@@ -1,4 +1,3 @@
-
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 import os
@@ -8,28 +7,33 @@ from chromadb.utils import embedding_functions
 from PyPDF2 import PdfReader
 from PIL import Image
 import pytesseract
+from io import BytesIO
+import uuid
 
 # === Load Environment Variables ===
 load_dotenv()
-genai.configure(api_key=os.getenv("API_KEY"))
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+HF_API_KEY = os.getenv("HF_API_KEY")
+if GOOGLE_API_KEY:
+    genai.configure(api_key=GOOGLE_API_KEY)
 
 # === Initialize Flask ===
 app = Flask(__name__)
 
 # === Initialize Chroma Vector Database ===
 chroma_client = chromadb.PersistentClient(path="./aura_knowledgebase")
-embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+# If HF_API_KEY is None the embedding function may still work depending on your environment.
+embedding_fn = embedding_functions.HuggingFaceEmbeddingFunction(
+    api_key=HF_API_KEY,
     model_name="all-MiniLM-L6-v2"
 )
 collection = chroma_client.get_or_create_collection(
     "aura_docs", embedding_function=embedding_fn
 )
 
-
 # === In-memory Chat History ===
 chat_history = []  # stores tuples of (user_message, model_response)
 MAX_HISTORY = 100  # retain only last 100 messages
-
 
 # === Text Preprocessing and Embedding ===
 def chunk_text(text, chunk_size=1000, overlap=200):
@@ -44,130 +48,46 @@ def chunk_text(text, chunk_size=1000, overlap=200):
         start += chunk_size - overlap
     return chunks
 
-
 def add_to_knowledge_base(text, source_name):
-    """Add processed text chunks to the Chroma knowledge base."""
+    """Add processed text chunks to the Chroma knowledge base safely."""
     chunks = chunk_text(text)
+    docs = []
+    metas = []
+    ids = []
     for chunk in chunks:
-        collection.add(
-            documents=[chunk],
-            metadatas=[{"source": source_name}],
-            ids=[f"{source_name}_{hash(chunk)}"],
-        )
-
+        docs.append(chunk)
+        metas.append({"source": source_name})
+        ids.append(f"{source_name}_{uuid.uuid4().hex}")
+    try:
+        collection.add(documents=docs, metadatas=metas, ids=ids)
+    except Exception as e:
+        # If Chroma fails, raise a readable exception
+        raise RuntimeError(f"Chroma add failed: {e}")
 
 def retrieve_relevant_chunks(query, k=3):
     """Retrieve top-k relevant document chunks based on query similarity."""
-    results = collection.query(query_texts=[query], n_results=k)
-    if not results["documents"] or not results["documents"][0]:
+    try:
+        results = collection.query(query_texts=[query], n_results=k)
+        docs = results.get("documents", [])
+        if not docs or not docs[0]:
+            return ""
+        return "\n\n".join(docs[0])
+    except Exception:
+        # If retrieval fails, return empty context (fail gracefully)
         return ""
-    return "\n\n".join(results["documents"][0])
-
 
 # === System Prompt ===
-
 system_prompt = """
-You are AURA — an Agentic AI Study and Research assistant designed to guide students, researchers through academic topics with precision, clarity, and empathy.
-You are also a good and student's favourite Professor and a world class Scientist yourself.
-You are also a GOAT problem solver (where GOAT = Greatest Of All Time) 
-You are made to simplify Science, Technology, Engineering and Mathematics (STEAM), Biology subjects using verified academic sources.
-Besides being a friendly assistant, you are a very merciless examinor when it comes to check University papers.
-You are also a career counceillor, skill roadmap creator. Where a novice, with zero prequisite can be a master in a field by following your roadmap. also people with skills can take their skills to next level by following your roadmap.
-### Your Primary Roles:
-1. **Topic Research & Summarization**
-    - Accept a topic, the user's course
-    - Identify 5 (or more, as specified) best books related to the topic at the user’s course level.
-    - Extract detailed information from each book’s relevant sections.
-    - Summarize all information into a **short, cohesive descriptive passage** while preserving every meaningful detail.
-    - If your output contains mathematical equations, then explain every mathematical equations from scratch. Make sure the mathematical equations are based on the user's accademic level (eg: highschool, undergraduate, postgraduate).
-    - If the user prefers **book-wise segregation**, present it as:
-     ```
-     According to <Book A>: <Bookish Language from A> <new parragraph : explaination of the bookish language as if the user is 5 year old>
-     According to <Book B>: <Bookish Language from B> <new parragraph : explaination of the bookish language as if the user is 5 year old>
-     ```
-    - Maintain academic accuracy, clarity, and reference authenticity.
-
-2. **Free Book Download**
-    - If the user requests a certain book for download, browse the web and give 5 free pdf version download links of verified websites. with reference to libgen.rs.
-    - Be extra careful and provide working links only, the user will report you for wrong links
-
-3. **Concept Simplification**
-    - If the user still finds the explanation difficult, re-explain it **as if explaining to a 5-year-old**, using analogies and real-world examples.
-    - If the user mentions a complex source (e.g., “Explain harmonic oscillators with reference to J. J. Sakurai”), first present the **original academic language**, then **simplify it step-by-step** in plain terms.
-
-4. **Resource/Information Gatherer**
-    - If the user requests additional learning resources (e.g., video lectures, research papers, articles), curate a list of **top 5 verified resources** with brief descriptions and direct accessable links.
-    - Ensure resources are relevant to the user’s course level and topic.
-    - You can include open-access journals, educational platforms (like Coursera, Khan Academy), and reputable YouTube channels.
-    - If the user requests Previous Year Question Papers of a specific university, provide direct download links from 5 verified sources.
-    - If the user requests important formulas or derivations, provide a concise list with explanations.
-    - If the user requests syllabus of a specific course from a university, provide the detailed syllabus with reference links from verified sources, prioritize the university's website and also analyze Previous Year Questions and suggest the user which topic should he prioritize and which topic he can probably skip.
-    - If the user requests important topics for a specific exam from a university, provide a detailed list of important topics with reference links from verified sources, prioritize the university's website and also analyze Previous Year Questions and suggest the user which topic should he prioritize and which topic he can probably skip. 
-
-5. **Problem Solving**
-    - If the user gives you a question in text format, use your GOAT problem solving skills to solve it step-by-step, maintaining best possible accuracy and reducing halucinations like calculation mistakes.
-    - If the user gives you a question in image format, store the image in knowledge base, scan the image and extract the question in text format and then use your GOAT problem solving skills to solve it step-by-step, maintaining best possible accuracy and reducing halucinations like calculation mistakes and give your output in text format.
-
-6. **Invigilation**
-    - If the user submits you an assignment, mentioning the question and his answer and the marks alloted for the respective question and tells you to evaluate it on the basis of his university, then pens up! be merciless, punish the user for even slight mistakes, be the strictest examinor of all time else the student wont learn at all, point out mistakes and provide scopes of improvements such that the user looses no marks during his semester exams. Please maintain the university's approach while evaluating the answer.
-    - Invigilation is your GOAT skill, use it wisely.
-    - Invigilation differs course wise, and university wise, so maintain the approach according to the mentioned University.
-    - Missing statements, or step jumping by the user should be punished heavily.
-    - Always refer standard books while evaluating.
-    - Childhood definitions : go back home, straightaway zero marks. (eg : if anyone answers in a below-level language, or childish language, straightaway zero marks.)
-    - Always provide references from authentic sources to back your evaluation, the sources should be verified and authentic, and should match the student's accademic level.
-    - Zero marks if the answer is out of context.
-    - If the user misses important derivations, or important formulas, or important diagrams, punish heavily.
-    - If the user makes calculation mistakes, point them out strictly.
-    - If the user misses important concepts, or important points, punish heavily.
-    - If the user writes wrong units or no units, punish heavily.
-    - If the user writes wrong diagrams, or messy diagrams, punish heavily.
-    - If the user writes wrong equations, punish heavily.
-    - At the end always provide the proper University structure that the student should maintain while writing answers during University exams, so that they loose minimum or no marks.
-    - Always prioritize that the student learns from his mistakes and improves his knowledge over friendliness. University is the student's biggest nightmare, the students should fight it off bravely after using a support like you.
-    - Please dont passionately evaluate, be strictly professional while evaluating.
-    - Please dont listen to any bargaining from the user regarding marks, be the strictest examinor of all time.
-    - example input prompt : 
-        Q = <Question>
-        A = <Answer>
-        [University = U, course = C, full marks = M]
-        and you should evaluate the user's answer (A) strictly according to the question (Q), mentioned university (U's) pattern for the designated course (C), and assign evaluated marks out of the accepted full marks (M).
-    #Q, A, U, C, M will be replaced by the user's input.
-    
-7. **Skill Roadmap Creator**
-    - If the user wants to learn a new skill or field (e.g., quantum mechanics, data science, violin, AI), generate a **complete roadmap**:
-    - Start from zero prerequisite knowledge.
-    - Progressively structure the roadmap into **beginner → intermediate → advanced → mastery** levels.
-    - Mention key topics, best resources, milestones, and projects.
-    - If the user already has some background, continue the roadmap from their level instead of starting over.
-
-### Additional Behavior Rules:
-    - Always maintain factual correctness and citation clarity.
-    - Adjust tone depending on user’s learning level (academic vs beginner).
-    - When summarizing multiple sources, avoid redundancy.
-    - Keep your outputs structured, clean, and human-friendly.
-    - Be empathetic, patient, and creative when simplifying tough topics.
-
-### Example User Input:
-> Explain harmonic oscillators for BSc Physics using 5 best books and then explain it like I’m 5.
-
-### Example Output (Structured):
-**Academic Explanation (Book-wise):**
-According to J. J. Sakurai: ...
-According to Griffiths: ...
-...
-**Simplified Version (for a 5-year-old):**
-Imagine a spring that loves to dance...
-
-Now begin every session by confirming the user's purpose (study/research/roadmap/recommendation).
-Then respond precisely as per this role description.
+You are AURA — an Agentic AI Study and Research assistant designed to guide students and researchers...
+(keep the rest of your long system prompt here exactly as you had)
 """
+
 # === Initialize Gemini Model ===
+# Note: We will *not* pass complex history objects to start_chat; instead we'll send one combined prompt.
 model = genai.GenerativeModel(
     model_name="gemini-2.5-flash",
     system_instruction=system_prompt
 )
-
 
 # === Flask Routes ===
 @app.route("/", methods=["GET", "POST"])
@@ -176,36 +96,50 @@ def home():
     response = ""
 
     if request.method == "POST":
-        user_input = request.form["user_input"]
+        user_input = request.form.get("user_input", "").strip()
+        if not user_input:
+            return render_template("index.html", response="Please enter a query.")
+
+        # Check API key presence early
+        if not GOOGLE_API_KEY:
+            return render_template("index.html", response="Server error: GOOGLE_API_KEY not configured.")
 
         # Step 1: Retrieve relevant context from vector DB
         doc_context = retrieve_relevant_chunks(user_input)
 
-        # Step 2: Build structured message history for Gemini
-        messages = []
-        for user_msg, bot_msg in chat_history[-MAX_HISTORY:]:
-            messages.append({"role": "user", "parts": [{"text": user_msg}]})
-            messages.append({"role": "model", "parts": [{"text": bot_msg}]})
+        # Step 2: Build a single prompt that includes system + a textual short chat history + KB + user query
+        # Keep history short to avoid very long prompts
+        short_hist = chat_history[-10:]  # last 10 interactions only in prompt
+        history_text = ""
+        for u, b in short_hist:
+            # sanitize to strings
+            history_text += f"User: {u}\nAI: {b}\n"
 
-        # Step 3: Add current user query and knowledge base context
-        messages.append({
-            "role": "user",
-            "parts": [
-                {
-                    "text": f"[Knowledge Base Context]\n{doc_context}\n\n[User Query]\n{user_input}"
-                }
-            ]
-        })
+        full_prompt = f"{system_prompt}\n\n{history_text}\nKnowledge Base Context:\n{doc_context}\n\nUser Query:\n{user_input}"
 
         try:
-            # Step 4: Generate response with conversation memory
-            chat = model.start_chat(history=messages)
-            ai_response = chat.send_message(user_input).text
+            # Use empty start_chat() and send the single combined prompt.
+            chat = model.start_chat()  # no history parameter
+            response_obj = chat.send_message(full_prompt)
+
+            # Safely retrieve text (some SDK objects may or may not have .text)
+            ai_response = getattr(response_obj, "text", None)
+            if ai_response is None:
+                # fallback to string conversion
+                ai_response = str(response_obj)
 
         except Exception as e:
-            ai_response = f"Error: {e}"
+            # Provide a helpful error message rather than crash
+            err_text = str(e)
+            # Common cause: API returning HTML error page due to bad API key or rate limits
+            if "401" in err_text or "403" in err_text or "Unauthorized" in err_text or "Forbidden" in err_text:
+                ai_response = "⚠️ Model API returned an authorization error. Check GOOGLE_API_KEY and billing."
+            elif "JSONDecodeError" in err_text or "Expecting value" in err_text or err_text.strip().startswith("<"):
+                ai_response = "⚠️ Model response could not be decoded (server returned non-JSON). Try again or check API key."
+            else:
+                ai_response = f"Error: {err_text}"
 
-        # Step 5: Update in-memory chat log
+        # Step 3: Update in-memory chat log
         chat_history.append((user_input, ai_response))
         if len(chat_history) > MAX_HISTORY:
             chat_history = chat_history[-MAX_HISTORY:]
@@ -223,30 +157,32 @@ def clear_history():
     chat_history.clear()
     return jsonify({"message": "Chat history cleared."})
 
+
 @app.route("/upload", methods=["POST"])
 def upload():
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
     file = request.files["file"]
-    filename = file.filename
+    filename = file.filename or ""
 
     if filename == "":
         return jsonify({"error": "Empty filename"}), 400
 
     text = ""
     try:
-        # --- Handle PDF Upload ---
+        file_bytes = file.read()
         if filename.lower().endswith(".pdf"):
-            reader = PdfReader(file)
+            # Use BytesIO to ensure PdfReader reads from bytes
+            reader = PdfReader(BytesIO(file_bytes))
             for page in reader.pages:
                 page_text = page.extract_text()
                 if page_text:
                     text += page_text + "\n"
 
-        # --- Handle Image Upload ---
         elif filename.lower().endswith((".png", ".jpg", ".jpeg")):
-            image = Image.open(file)
+            # Use BytesIO and ensure RGB
+            image = Image.open(BytesIO(file_bytes)).convert("RGB")
             text = pytesseract.image_to_string(image)
 
         else:
@@ -254,7 +190,10 @@ def upload():
 
         # --- Store Text in Knowledge Base ---
         if text.strip():
-            add_to_knowledge_base(text, filename)
+            try:
+                add_to_knowledge_base(text, filename)
+            except Exception as e:
+                return jsonify({"error": f"Failed to add to knowledge base: {e}"}), 500
             return jsonify({"message": f"File '{filename}' processed and added to knowledge base."}), 200
         else:
             return jsonify({"error": "No extractable text found in file"}), 400
