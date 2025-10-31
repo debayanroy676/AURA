@@ -1,135 +1,173 @@
 <!DOCTYPE html>
-<!-- Re Deploy -->
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>AURA — Your Research Assistant</title>
-    <style>
-        body {
-            font-family: "Segoe UI", Arial, sans-serif;
-            max-width: 900px;
-            margin: 2rem auto;
-            padding: 1rem;
-            background: #f8f9fa;
-        }
-        h1 { text-align: center; color: #333; }
-        textarea {
-            width: 100%;
-            height: 140px;
-            padding: 10px;
-            border-radius: 6px;
-            border: 1px solid #ccc;
-            resize: vertical;
-            font-size: 15px;
-        }
-        button {
-            background-color: #0066ff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            font-size: 15px;
-            border-radius: 6px;
-            cursor: pointer;
-            margin-top: 10px;
-        }
-        button:hover { background-color: #0047b3; }
+  <meta charset="utf-8">
+  <title>AURA — Your Research Assistant</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.tailwindcss.com"></script>
 
-        #response-box, #animation-box {
-            background: white;
-            margin-top: 2rem;
-            padding: 1rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
-        pre {
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            background: #f2f2f2;
-            padding: 10px;
-            border-radius: 6px;
-        }
-        #text-response {
-            line-height: 1.7;
-            font-size: 15px;
-            color: #222;
-        }
-        #text-response code {
-            background: #f3f3f3;
-            padding: 2px 5px;
-            border-radius: 4px;
-            font-family: monospace;
-        }
-        #text-response sup { font-size: 0.8em; vertical-align: super; }
-        #text-response sub { font-size: 0.8em; vertical-align: sub; }
-    </style>
+  <!-- MathJax for LaTeX rendering -->
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
 
-    <!-- MathJax for LaTeX rendering -->
-    <script>
-        window.MathJax = {
-            tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
-            svg: { fontCache: 'global' }
-        };
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
+  <style>
+    .spinner div {
+      width: 10px;
+      height: 10px;
+      background-color: #2563eb;
+      border-radius: 100%;
+      display: inline-block;
+      animation: bounce 1.4s infinite ease-in-out both;
+    }
+    .spinner .bounce1 { animation-delay: -0.32s; }
+    .spinner .bounce2 { animation-delay: -0.16s; }
+
+    @keyframes bounce {
+      0%, 80%, 100% { transform: scale(0); }
+      40% { transform: scale(1.0); }
+    }
+
+    /* Smooth scroll for responses */
+    #text-response {
+      scroll-behavior: smooth;
+    }
+  </style>
 </head>
-<body>
-    <h1>Welcome, I am AURA 🌐</h1>
 
-    <form id="text-form" method="POST">
-        <textarea name="user_input" placeholder="Enter your text here..."></textarea><br>
-        <button type="submit">Submit</button>
+<body class="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-gray-100 flex flex-col items-center justify-center p-4">
+
+  <div class="w-full max-w-3xl bg-slate-800/60 backdrop-blur-md shadow-2xl rounded-2xl border border-slate-700 p-6 space-y-6">
+    
+    <!-- Header -->
+    <div class="text-center">
+      <h1 class="text-3xl font-bold text-blue-400">AURA</h1>
+      <p class="text-sm text-gray-400">Your AI Study & Research Assistant</p>
+    </div>
+
+    <!-- Query Form -->
+    <form id="text-form" method="POST" class="space-y-4">
+      <textarea name="user_input"
+        placeholder="Ask me anything about your research or course..."
+        class="w-full h-40 p-4 text-gray-100 bg-slate-900 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"></textarea>
+      
+      <div class="flex items-center justify-between">
+        <button type="submit"
+          class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg font-medium transition-colors">
+          Ask AURA ✨
+        </button>
+        <div id="loading-spinner" class="spinner hidden text-center">
+          <div class="bounce1"></div>
+          <div class="bounce2"></div>
+          <div class="bounce3"></div>
+        </div>
+      </div>
     </form>
 
-    <hr>
+    <!-- Upload Section -->
+    <div class="border-t border-slate-700 pt-4">
+      <h3 class="text-lg font-semibold text-blue-400 mb-2">📚 Upload PDFs or Images</h3>
+      <form id="upload-form" enctype="multipart/form-data" class="flex flex-col sm:flex-row items-center gap-3">
+        <input type="file" name="file" accept=".pdf,.png,.jpg,.jpeg"
+          class="file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 bg-slate-900 text-sm text-gray-400 border border-slate-700 rounded-lg cursor-pointer">
+        <button type="submit"
+          class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-medium transition-colors">
+          Upload
+        </button>
+      </form>
+      <p id="upload-status" class="text-sm text-gray-400 mt-2"></p>
+    </div>
 
     <!-- Response Box -->
-    <div id="response-box">
-        {% if response %}
-        <h2>Response:</h2>
-        <div id="text-response">{{ response | safe }}</div>
-        {% endif %}
+    <div id="response-box" class="bg-slate-900/80 border border-slate-700 rounded-xl p-4 max-h-[500px] overflow-y-auto">
+      {% if response %}
+      <h2 class="text-lg font-semibold text-blue-300 mb-3">Response:</h2>
+      <div id="text-response" class="text-gray-100 leading-relaxed space-y-2">
+        {{ response | safe }}
+      </div>
+      {% else %}
+      <p class="text-gray-500 text-center">No response yet — start by asking something!</p>
+      {% endif %}
     </div>
+  </div>
+
 <script>
-// Function to convert Markdown, links, superscripts/subscripts
+// --- Markdown & MathJax Formatting ---
 function formatResponse(raw) {
-    let formatted = raw;
-
-    // Headers
-    formatted = formatted
-        .replace(/^###### (.*)$/gm, '<h6>$1</h6>')
-        .replace(/^##### (.*)$/gm, '<h5>$1</h5>')
-        .replace(/^#### (.*)$/gm, '<h4>$1</h4>')
-        .replace(/^### (.*)$/gm, '<h3>$1</h3>')
-        .replace(/^## (.*)$/gm, '<h2>$1</h2>')
-        .replace(/^# (.*)$/gm, '<h1>$1</h1>');
-
-    // Bold and Italic
-    formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-                         .replace(/\*(.*?)\*/g, '<i>$1</i>');
-
-    // Superscript / Subscript
-    formatted = formatted.replace(/\^([^\^]+)\^/g, '<sup>$1</sup>')
-                         .replace(/~([^~]+)~/g, '<sub>$1</sub>');
-
-    // Links
-    formatted = formatted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-
-    // Line breaks
-    formatted = formatted.replace(/\n/g, '<br>');
-
-    return formatted;
+  let formatted = raw;
+  formatted = formatted
+    .replace(/^###### (.*)$/gm, '<h6 class="font-semibold text-gray-300">$1</h6>')
+    .replace(/^##### (.*)$/gm, '<h5 class="font-semibold text-gray-300">$1</h5>')
+    .replace(/^#### (.*)$/gm, '<h4 class="font-semibold text-gray-200">$1</h4>')
+    .replace(/^### (.*)$/gm, '<h3 class="font-semibold text-blue-400 mt-3">$1</h3>')
+    .replace(/^## (.*)$/gm, '<h2 class="font-bold text-blue-300 text-lg mt-3">$1</h2>')
+    .replace(/^# (.*)$/gm, '<h1 class="text-2xl font-bold text-blue-400 mt-3">$1</h1>')
+    .replace(/\*\*(.*?)\*\*/g, '<b class="font-semibold">$1</b>')
+    .replace(/\*(.*?)\*/g, '<i>$1</i>')
+    .replace(/\^([^\^]+)\^/g, '<sup>$1</sup>')
+    .replace(/~([^~]+)~/g, '<sub>$1</sub>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="text-blue-400 underline">$1</a>')
+    .replace(/\n/g, '<br>');
+  return formatted;
 }
-    document.addEventListener("DOMContentLoaded", () => {
-        const box = document.getElementById("text-response");
-        if (!box) return;
 
-        box.innerHTML = formatResponse(box.innerHTML);
+// --- Handle Query Submission ---
+document.getElementById("text-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const spinner = document.getElementById("loading-spinner");
+  spinner.classList.remove("hidden");
 
-        if (window.MathJax) {
-            MathJax.typesetPromise([box]);
-        }
-    });
-    </script>
+  const formData = new FormData(e.target);
+  const responseBox = document.getElementById("text-response");
+  if (responseBox) responseBox.innerHTML = "";
 
+  try {
+    const response = await fetch("/", { method: "POST", body: formData });
+    const html = await response.text();
+    document.open();
+    document.write(html);
+    document.close();
+  } catch (err) {
+    alert("Error: " + err.message);
+  } finally {
+    spinner.classList.add("hidden");
+  }
+});
+
+// --- Handle File Upload ---
+document.getElementById("upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const formData = new FormData(e.target);
+  const status = document.getElementById("upload-status");
+  status.innerHTML = "⏳ Uploading...";
+  try {
+    const res = await fetch("/upload", { method: "POST", body: formData });
+    const data = await res.json();
+    if (data.message) {
+      status.innerHTML = "✅ " + data.message;
+      status.classList.remove("text-red-400");
+      status.classList.add("text-green-400");
+    } else {
+      status.innerHTML = "❌ " + (data.error || "Unknown error");
+      status.classList.add("text-red-400");
+    }
+  } catch (err) {
+    status.innerHTML = "❌ Error: " + err.message;
+    status.classList.add("text-red-400");
+  }
+});
+
+// --- Apply Formatting after Load ---
+document.addEventListener("DOMContentLoaded", () => {
+  const box = document.getElementById("text-response");
+  if (!box) return;
+  box.innerHTML = formatResponse(box.innerHTML);
+  if (window.MathJax) MathJax.typesetPromise([box]);
+});
+</script>
 </body>
 </html>

@@ -3,8 +3,12 @@ from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 import os
 import google.generativeai as genai
-from sentence_transformers import SentenceTransformer
 import chromadb
+from chromadb.utils import embedding_functions
+from PyPDF2 import PdfReader
+from PIL import Image
+import pytesseract
+
 # === Load Environment Variables ===
 load_dotenv()
 genai.configure(api_key=os.getenv("API_KEY"))
@@ -14,8 +18,13 @@ app = Flask(__name__)
 
 # === Initialize Chroma Vector Database ===
 chroma_client = chromadb.PersistentClient(path="./aura_knowledgebase")
-collection = chroma_client.get_or_create_collection("aura_docs")
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
+embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name="all-MiniLM-L6-v2"
+)
+collection = chroma_client.get_or_create_collection(
+    "aura_docs", embedding_function=embedding_fn
+)
+
 
 # === In-memory Chat History ===
 chat_history = []  # stores tuples of (user_message, model_response)
@@ -37,20 +46,19 @@ def chunk_text(text, chunk_size=1000, overlap=200):
 
 
 def add_to_knowledge_base(text, source_name):
+    """Add processed text chunks to the Chroma knowledge base."""
     chunks = chunk_text(text)
     for chunk in chunks:
-        embedding = embedder.encode([chunk])[0].tolist()
         collection.add(
             documents=[chunk],
-            embeddings=[embedding],
-            metadatas=[{"source": source_name}]
+            metadatas=[{"source": source_name}],
+            ids=[f"{source_name}_{hash(chunk)}"],
         )
 
 
-# === Retrieve Relevant Knowledge ===
 def retrieve_relevant_chunks(query, k=3):
-    embedding = embedder.encode([query])[0].tolist()
-    results = collection.query(query_embeddings=[embedding], n_results=k)
+    """Retrieve top-k relevant document chunks based on query similarity."""
+    results = collection.query(query_texts=[query], n_results=k)
     if not results["documents"] or not results["documents"][0]:
         return ""
     return "\n\n".join(results["documents"][0])
@@ -156,7 +164,7 @@ Then respond precisely as per this role description.
 """
 # === Initialize Gemini Model ===
 model = genai.GenerativeModel(
-    model_name="gemini-2.5-pro",
+    model_name="gemini-2.5-flash",
     system_instruction=system_prompt
 )
 
@@ -214,6 +222,45 @@ def clear_history():
     global chat_history
     chat_history.clear()
     return jsonify({"message": "Chat history cleared."})
+
+@app.route("/upload", methods=["POST"])
+def upload():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file = request.files["file"]
+    filename = file.filename
+
+    if filename == "":
+        return jsonify({"error": "Empty filename"}), 400
+
+    text = ""
+    try:
+        # --- Handle PDF Upload ---
+        if filename.lower().endswith(".pdf"):
+            reader = PdfReader(file)
+            for page in reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+
+        # --- Handle Image Upload ---
+        elif filename.lower().endswith((".png", ".jpg", ".jpeg")):
+            image = Image.open(file)
+            text = pytesseract.image_to_string(image)
+
+        else:
+            return jsonify({"error": "Unsupported file type"}), 400
+
+        # --- Store Text in Knowledge Base ---
+        if text.strip():
+            add_to_knowledge_base(text, filename)
+            return jsonify({"message": f"File '{filename}' processed and added to knowledge base."}), 200
+        else:
+            return jsonify({"error": "No extractable text found in file"}), 400
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
