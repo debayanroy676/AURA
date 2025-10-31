@@ -13,7 +13,7 @@ import uuid
 # === Load Environment Variables ===
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-HF_API_KEY = os.getenv("HF_API_KEY")
+CHROMA_HUGGINGFACE_API_KEY = os.getenv("CHROMA_HUGGINGFACE_API_KEY ")
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
 
@@ -24,7 +24,7 @@ app = Flask(__name__)
 chroma_client = chromadb.PersistentClient(path="./aura_knowledgebase")
 # If HF_API_KEY is None the embedding function may still work depending on your environment.
 embedding_fn = embedding_functions.HuggingFaceEmbeddingFunction(
-    api_key=HF_API_KEY,
+    api_key=CHROMA_HUGGINGFACE_API_KEY,
     model_name="all-MiniLM-L6-v2"
 )
 collection = chroma_client.get_or_create_collection(
