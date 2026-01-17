@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AURA — Academic Unified Research Agent</title>
+  <script defer src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='stylesheets/stylesheet.css') }}">
+  <script defer src="{{ url_for('static', filename='scripts/script.js') }}"></script>
+</head>
+
+<body>
+  <div class="grid"></div>
+
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2Z"
+                  stroke="rgba(39,214,255,0.95)" stroke-width="1.6" stroke-linecap="round"/>
+            <path d="M10 21h4" stroke="rgba(180,92,255,0.95)" stroke-width="1.6" stroke-linecap="round"/>
+            <path d="M10 12h4" stroke="rgba(255,255,255,0.8)" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="brandText">
+          <div class="title">AURA</div>
+          <div class="sub">Academic Unified Research Agent</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <div class="pill">
+          <span style="width:8px;height:8px;border-radius:50%;background:rgba(39,214,255,0.9);box-shadow:0 0 12px rgba(39,214,255,0.6)"></span>
+          <span id="statusText">Ready</span>
+        </div>
+        <button class="btn kbToggleBtn" id="kbToggleBtn">KB Upload</button>
+        <button class="btn" id="resetBtn">Reset KB</button>
+        <button class="btn btnPrimary" id="clearChatBtn">Clear Chat</button>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="cardInner">
+          <div class="panelTitle">
+            <h3>Knowledge Base Upload</h3>
+            <span class="hint">PDF / Image</span>
+          </div>
+
+          <div class="dropzone" id="dropzone">
+            <div class="dzIcon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="M12 16V4" stroke="rgba(39,214,255,0.95)" stroke-width="1.8" stroke-linecap="round"/>
+                <path d="M7 9l5-5 5 5" stroke="rgba(39,214,255,0.95)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" stroke="rgba(180,92,255,0.95)" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="dzText">Drag & drop file here</div>
+            <div class="dzSub">or click to choose a PDF/image. We’ll OCR + index it into your session knowledge base.</div>
+            <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden>
+          </div>
+
+          <div style="height:12px"></div>
+
+          <div class="progress" title="Upload progress">
+            <div class="bar" id="bar"></div>
+          </div>
+
+          <div style="height:12px"></div>
+
+          <div class="fileRow">
+            <div class="fileMeta">
+              <div class="fileName" id="fileName">No file uploaded</div>
+              <div class="fileId" id="fileId">file_id: —</div>
+            </div>
+            <button class="btn" id="uploadBtn">Upload</button>
+          </div>
+
+          <div style="height:12px"></div>
+          <div class="small">
+            Tip: For fastest results, upload <b>≤10 pages</b> and clear scanned images.
+          </div>
+        </div>
+      </div>
+
+      <div class="card chat">
+        <div class="chatHeader">
+          <div class="left">
+            <div class="h1">Ask AURA</div>
+            <div class="h2">Answers based on your uploaded context + query</div>
+          </div>
+          <div class="pill">
+            <span style="width:8px;height:8px;border-radius:50%;background:rgba(180,92,255,0.9);box-shadow:0 0 12px rgba(180,92,255,0.55)"></span>
+            <span id="kbBadge">KB: empty</span>
+          </div>
+        </div>
+
+        <div class="chatBody" id="chatBody"></div>
+
+        <div class="chatFooter">
+          <textarea id="prompt" placeholder="Type your question... (Shift+Enter for new line)"></textarea>
+          <button class="btn btnPrimary sendBtn" id="sendBtn">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
