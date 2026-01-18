@@ -23,14 +23,13 @@ genai.configure(api_key=GOOGLE_API_KEY)
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024
 
-KB_PATH = "./aura_knowledgebase"
-if os.path.exists(KB_PATH):
-    shutil.rmtree(KB_PATH, ignore_errors=True)
+KB_PATH = os.getenv("CHROMA_PATH", "/tmp/aura_chroma")
+os.makedirs(KB_PATH, exist_ok=True)
 
 chroma_client = chromadb.PersistentClient(path=KB_PATH)
 collection = chroma_client.get_or_create_collection("aura_docs")
 
-logging.info("Fresh session-based knowledge base initialized.")
+logging.info(f"Chroma re-initialized at: {KB_PATH}")
 
 system_prompt = """
         You are AURA — Academic Unified Research Agent.
