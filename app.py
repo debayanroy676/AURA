@@ -267,6 +267,12 @@ def home():
                 res = collection.query(query_embeddings=[qvec], n_results=6)
 
             docs = []
+            if isinstance(res, dict):
+                docs_list = res.get("documents")
+                if docs_list and len(docs_list) > 0 and docs_list[0]:
+                    docs = docs_list[0][:4]
+            context = "\n\n".join((d or "")[:6000] for d in docs).strip()
+
             if res.get("documents") and res["documents"]:
                 docs = res["documents"][0][:4]
 
