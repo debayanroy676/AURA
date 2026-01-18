@@ -7,4 +7,3 @@ hf_xet==1.2.0
 pillow==10.0.0
 PyMuPDF==1.23.8
 numpy<2
-pytesseract==0.3.10
