@@ -1,5 +1,7 @@
 let selectedFile = null;
 let fileId = null;
+let isSending = false;
+let isUploading = false;
 
 const dropzone = document.getElementById("dropzone");
 const fileInput = document.getElementById("fileInput");
@@ -18,227 +20,302 @@ const resetBtn = document.getElementById("resetBtn");
 const clearChatBtn = document.getElementById("clearChatBtn");
 
 function setStatus(t) {
-    statusText.textContent = t;
+  statusText.textContent = t;
 }
 
 function scrollChat() {
-    chatBody.scrollTop = chatBody.scrollHeight;
+  chatBody.scrollTop = chatBody.scrollHeight;
 }
 
 function renderMath() {
-    if (window.renderMathInElement) {
-        try {
-            renderMathInElement(chatBody, {
-                delimiters: [
-                    { left: "$$", right: "$$", display: true },
-                    { left: "$", right: "$", display: false },
-                ]
-            });
-        } catch (e) { }
-    }
+  if (window.renderMathInElement) {
+    try {
+      renderMathInElement(chatBody, {
+        delimiters: [
+          { left: "$$", right: "$$", display: true },
+          { left: "$", right: "$", display: false },
+        ],
+      });
+    } catch (e) {}
+  }
 }
 
-function escapeHTML(str){
-  return str.replace(/[&<>"']/g, (m) => ({
-    "&":"&amp;",
-    "<":"&lt;",
-    ">":"&gt;",
-    '"':"&quot;",
-    "'":"&#039;"
+function escapeHTML(str) {
+  return (str || "").replace(/[&<>"']/g, (m) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;",
   }[m]));
 }
 
-function addBubble(text, who="bot"){
-  const b = document.createElement("div");
-  b.className = "bubble " + who;
+function setBubbleContent(bubbleEl, text, who = "bot") {
+  const msg = text || "";
 
   if (who === "bot") {
     if (window.marked) {
-      b.innerHTML = marked.parse(text || "");
+      bubbleEl.innerHTML = marked.parse(msg);
     } else {
-      b.textContent = text;
+      bubbleEl.textContent = msg;
     }
   } else {
-    b.innerHTML = escapeHTML(text || "");
+    bubbleEl.innerHTML = escapeHTML(msg);
   }
+
+  renderMath();
+  scrollChat();
+}
+
+function addBubble(text, who = "bot") {
+  const b = document.createElement("div");
+  b.className = "bubble " + who;
+
+  setBubbleContent(b, text, who);
 
   chatBody.appendChild(b);
   scrollChat();
-  renderMath();
   return b;
 }
 
+async function safeJson(res) {
+  const raw = await res.text();
 
-dropzone.addEventListener("click", () => fileInput.click());
+  let data = null;
+  try {
+    data = JSON.parse(raw);
+  } catch (e) {
+    return {
+      ok: false,
+      status: res.status,
+      message:
+        "Server returned non-JSON response.\n\n" +
+        raw.slice(0, 800),
+    };
+  }
 
-dropzone.addEventListener("dragover", (e) => {
+  return {
+    ok: res.ok,
+    status: res.status,
+    ...data,
+  };
+}
+
+if (dropzone) {
+  dropzone.addEventListener("click", () => fileInput.click());
+
+  dropzone.addEventListener("dragover", (e) => {
     e.preventDefault();
     dropzone.classList.add("dragover");
-});
+  });
 
-dropzone.addEventListener("dragleave", () => {
+  dropzone.addEventListener("dragleave", () => {
     dropzone.classList.remove("dragover");
-});
+  });
 
-dropzone.addEventListener("drop", (e) => {
+  dropzone.addEventListener("drop", (e) => {
     e.preventDefault();
     dropzone.classList.remove("dragover");
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-        setFile(e.dataTransfer.files[0]);
+      setFile(e.dataTransfer.files[0]);
     }
-});
+  });
+}
 
 fileInput.addEventListener("change", (e) => {
-    if (e.target.files && e.target.files[0]) {
-        setFile(e.target.files[0]);
-    }
+  if (e.target.files && e.target.files[0]) {
+    setFile(e.target.files[0]);
+  }
 });
 
 function setFile(f) {
-    selectedFile = f;
-    fileNameEl.textContent = f.name;
-    bar.style.width = "0%";
-    setStatus("File selected");
+  selectedFile = f;
+  fileNameEl.textContent = f.name;
+  bar.style.width = "0%";
+  setStatus("File selected");
 }
 
 uploadBtn.addEventListener("click", async () => {
-    if (!selectedFile) {
-        setStatus("Choose a file first");
-        return;
-    }
+  if (isUploading) return; 
+  if (!selectedFile) {
+    setStatus("Choose a file first");
+    return;
+  }
 
-    setStatus("Uploading...");
-    bar.style.width = "8%";
+  isUploading = true;
+  uploadBtn.disabled = true;
 
-    const formData = new FormData();
-    formData.append("file", selectedFile);
+  setStatus("Uploading...");
+  bar.style.width = "8%";
 
-    try {
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", "/upload", true);
+  const formData = new FormData();
+  formData.append("file", selectedFile);
 
-        xhr.upload.onprogress = (evt) => {
-            if (evt.lengthComputable) {
-                const pct = Math.min(90, Math.round((evt.loaded / evt.total) * 90));
-                bar.style.width = pct + "%";
-            }
-        };
+  const infoBubble = addBubble("Uploading file…", "bot");
 
-        xhr.onload = () => {
-            if (xhr.status === 200) {
-                const data = JSON.parse(xhr.responseText);
-                fileId = data.file_id;
-                fileIdEl.textContent = "file_id: " + fileId;
-                kbBadge.textContent = "KB: loaded";
-                bar.style.width = "100%";
-                setStatus("Upload done");
-                addBubble("Uploaded & indexed. Now ask your question.", "bot");
-            } else {
-                setStatus("Upload failed");
-                addBubble("Upload failed: " + xhr.responseText, "bot");
-                bar.style.width = "0%";
-            }
-        };
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/upload", true);
 
-        xhr.onerror = () => {
-            setStatus("Upload error");
-            addBubble("Upload error. Check console/logs.", "bot");
+    xhr.upload.onprogress = (evt) => {
+      if (evt.lengthComputable) {
+        const pct = Math.min(90, Math.round((evt.loaded / evt.total) * 90));
+        bar.style.width = pct + "%";
+      }
+    };
+
+    xhr.onload = () => {
+      try {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          let data;
+          try {
+            data = JSON.parse(xhr.responseText);
+          } catch (e) {
+            setBubbleContent(
+              infoBubble,
+              "Upload failed (non-JSON response):\n\n" + xhr.responseText.slice(0, 800),
+              "bot"
+            );
+            setStatus("Upload failed");
             bar.style.width = "0%";
-        };
+            return;
+          }
 
-        xhr.send(formData);
+          fileId = data.file_id;
+          fileIdEl.textContent = "file_id: " + fileId;
+          kbBadge.textContent = "KB: loaded";
+          bar.style.width = "100%";
+          setStatus("Upload done");
 
-    } catch (err) {
-        setStatus("Upload error");
-        addBubble("Upload error: " + err, "bot");
-        bar.style.width = "0%";
-    }
+          setBubbleContent(infoBubble, "Uploaded & indexed. Now ask your question.", "bot");
+        } else {
+          setStatus("Upload failed");
+          bar.style.width = "0%";
+          setBubbleContent(infoBubble, "Upload failed:\n\n" + xhr.responseText, "bot");
+        }
+      } finally {
+        isUploading = false;
+        uploadBtn.disabled = false;
+      }
+    };
+
+    xhr.onerror = () => {
+      setStatus("Upload error");
+      bar.style.width = "0%";
+      setBubbleContent(infoBubble, "Upload error. Check console/logs.", "bot");
+
+      isUploading = false;
+      uploadBtn.disabled = false;
+    };
+
+    xhr.send(formData);
+  } catch (err) {
+    setStatus("Upload error");
+    bar.style.width = "0%";
+    setBubbleContent(infoBubble, "Upload error:\n\n" + String(err), "bot");
+
+    isUploading = false;
+    uploadBtn.disabled = false;
+  }
 });
 
 async function sendMessage() {
-    const userText = (promptEl.value || "").trim();
-    if (!userText) {
-        setStatus("Type something");
-        return;
+  if (isSending) return; 
+  const userText = (promptEl.value || "").trim();
+  if (!userText) {
+    setStatus("Type something");
+    return;
+  }
+
+  isSending = true;
+  sendBtn.disabled = true;
+
+  addBubble(userText, "user");
+  promptEl.value = "";
+  setStatus("Thinking...");
+
+  const loading = addBubble("Processing…", "bot");
+
+  try {
+    const res = await fetch("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_input: userText,
+        file_id: fileId,
+      }),
+    });
+
+    const data = await safeJson(res);
+
+    if (!data.ok) {
+      setBubbleContent(
+        loading,
+        `**Error (${data.status})**\n\n${data.message || "Unknown server error"}`,
+        "bot"
+      );
+      setStatus("Error");
+      return;
     }
 
-    addBubble(userText, "user");
-    promptEl.value = "";
-    setStatus("Thinking...");
-
-    const loading = addBubble("Processing…", "bot");
-
-    try {
-        const res = await fetch("/", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                user_input: userText,
-                file_id: fileId
-            })
-        });
-
-        const data = await res.json();
-
-        if (window.marked) {
-            loading.innerHTML = marked.parse(data.message || "No response");
-        } else {
-            loading.textContent = data.message || "No response";
-        }
-
-        setStatus("Ready");
-        renderMath();
-        scrollChat();
-    } catch (e) {
-        loading.textContent = "Error: " + e;
-        setStatus("Error");
-    }
+    setBubbleContent(loading, data.message || "No response", "bot");
+    setStatus("Ready");
+  } catch (e) {
+    setBubbleContent(loading, "**Network Error**\n\n" + String(e), "bot");
+    setStatus("Error");
+  } finally {
+    isSending = false;
+    sendBtn.disabled = false;
+  }
 }
-
 
 sendBtn.addEventListener("click", sendMessage);
 
 promptEl.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-    }
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
 });
 
 resetBtn.addEventListener("click", async () => {
-    setStatus("Resetting...");
-    try {
-        const res = await fetch("/reset", { method: "POST" });
-        const raw = await res.text();
-        let data;
-        try {
-            data = JSON.parse(raw);
-        } catch (e) {
-            loading.textContent = "Server returned non-JSON:\n\n" + raw;
-            setStatus("Error");
-            return;
-        }
+  setStatus("Resetting...");
+  const b = addBubble("Resetting knowledge base…", "bot");
 
-        addBubble(data.message || "KB reset", "bot");
-        fileId = null;
-        fileIdEl.textContent = "file_id: —";
-        kbBadge.textContent = "KB: empty";
-        bar.style.width = "0%";
-        setStatus("Ready");
-    } catch (e) {
-        addBubble("Reset failed: " + e, "bot");
-        setStatus("Error");
+  try {
+    const res = await fetch("/reset", { method: "POST" });
+    const data = await safeJson(res);
+
+    if (!data.ok) {
+      setBubbleContent(
+        b,
+        `**Reset failed (${data.status})**\n\n${data.message || "Unknown error"}`,
+        "bot"
+      );
+      setStatus("Error");
+      return;
     }
+
+    setBubbleContent(b, data.message || "KB reset", "bot");
+    fileId = null;
+    fileIdEl.textContent = "file_id: —";
+    kbBadge.textContent = "KB: empty";
+    bar.style.width = "0%";
+    setStatus("Ready");
+  } catch (e) {
+    setBubbleContent(b, "**Reset failed**\n\n" + String(e), "bot");
+    setStatus("Error");
+  }
 });
 
 clearChatBtn.addEventListener("click", () => {
-    chatBody.innerHTML = "";
-    addBubble("Chat cleared. Upload again or ask a new question.", "bot");
-    setStatus("Ready");
+  chatBody.innerHTML = "";
+  addBubble("Chat cleared.", "bot");
+  setStatus("Ready");
 });
 
 window.addEventListener("load", () => {
-    renderMath();
+  renderMath();
 });
 
 const kbToggleBtn = document.getElementById("kbToggleBtn");
