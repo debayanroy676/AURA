@@ -60,7 +60,7 @@ Output rules:
     - For numericals: formula → substitution → final answer with unit.
 """
 
-MODEL = "gemini-2.0-flash-exp"
+MODEL = "gemini-2.5-flash"
 EMBED_MODEL = "text-embedding-004"
 
 
