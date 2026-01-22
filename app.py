@@ -224,71 +224,27 @@ def get_chroma():
         if _chroma_client is not None and _collection is not None:
             return _chroma_client, _collection
         
-        try:
-            if os.environ.get("CHROMA_SERVER") == "true":
-                logging.info("Using ChromaDB HTTP client")
-                _chroma_client = chromadb.HttpClient(
-                    host=os.environ.get("CHROMA_HOST", "localhost"), 
-                    port=int(os.environ.get("CHROMA_PORT", 8000))
-                )
-            else:
-                logging.info(f"Using ChromaDB PersistentClient at: {KB_PATH}")
+        retries = 5
+        for attempt in range(retries):
+            try:
                 _chroma_client = chromadb.PersistentClient(path=KB_PATH)
-            
-            _collection = _chroma_client.get_or_create_collection("aura_docs")
-            logging.info("ChromaDB initialized successfully")
-            return _chroma_client, _collection
-            
-        except Exception as e:
-            logging.warning(f"ChromaDB failed to initialize: {e}. Running in fallback mode (no vector search).")
-            class DummyCollection:
-                def query(self, **kwargs): 
-                    return {"documents": []}
-                def add(self, **kwargs): 
-                    logging.warning("DummyCollection.add() called - no vector storage available")
-                    pass
-                def get(self, **kwargs): 
-                    return {"documents": []}
-                def delete(self, **kwargs):
-                    pass
-            
-            class DummyClient:
-                def get_or_create_collection(self, name): 
-                    return DummyCollection()
-                def delete_collection(self, name):
-                    pass
-            
-            _chroma_client = DummyClient()
-            _collection = DummyCollection()
-            return _chroma_client, _collection
-
-
-@app.route("/", methods=["GET"])
-def root():
-    """Simple root endpoint for health checks"""
-    try:
-        chroma_client, collection = get_chroma()
-        chroma_status = "connected"
-    except Exception as e:
-        chroma_status = f"error: {str(e)[:100]}"
-    
-    return jsonify({
-        "status": "AURA API is running",
-        "service": "Academic Unified Research Agent",
-        "chromadb": chroma_status,
-        "gemini": "enabled" if client else "disabled",
-        "endpoints": {
-            "health": "/health (GET)",
-            "upload": "/upload (POST)",
-            "reset": "/reset (POST)",
-            "chat": "/chat (POST)"
-        }
-    }), 200
+                _collection = _chroma_client.get_or_create_collection("aura_docs")
+                logging.info(f"ChromaDB initialized at: {KB_PATH}")
+                break
+            except Exception as e:
+                if attempt < retries - 1 and ("locked" in str(e).lower() or "already exists" in str(e).lower()):
+                    wait_time = 0.2 * (2 ** attempt)
+                    logging.warning(f"ChromaDB initialization attempt {attempt + 1} failed: {e}. Retrying in {wait_time:.2f}s...")
+                    time.sleep(wait_time)
+                else:
+                    logging.error(f"Failed to initialize ChromaDB after {retries} attempts: {e}")
+                    raise RuntimeError(f"Failed to initialize ChromaDB: {e}")
+        
+        return _chroma_client, _collection
 
 
 @app.route("/health", methods=["GET"])
 def health_check():
-    """Detailed health check endpoint"""
     try:
         chroma_client, collection = get_chroma()
         chroma_status = "connected"
@@ -298,10 +254,8 @@ def health_check():
     return jsonify({
         "status": "healthy", 
         "service": "AURA",
-        "timestamp": time.time(),
         "chromadb": chroma_status,
-        "gemini": "enabled" if client else "disabled",
-        "memory_usage": "ok"
+        "gemini": "enabled" if client else "disabled"
     }), 200
 
 
@@ -332,18 +286,8 @@ def upload_file():
         return jsonify({"error": f"Upload failed: {str(e)}"}), 500
 
 
-@app.route("/chat", methods=["GET", "POST"])
-def chat():
-    """Main chat endpoint (was previously home())"""
-    if request.method == "GET":
-        return jsonify({
-            "message": "Use POST with 'user_input' and optionally 'file_id'",
-            "example": {
-                "user_input": "Explain quantum physics",
-                "file_id": "optional_document_id"
-            }
-        }), 200
-    
+@app.route("/", methods=["GET", "POST"])
+def home():
     if request.method == "POST":
         if request.is_json:
             data = request.get_json(silent=True) or {}
@@ -428,6 +372,8 @@ Rules:
         except Exception as e:
             logging.exception("MODEL.generate_content failed")
             return jsonify({"message": f"Model error: {str(e)}"}), 500
+
+    return render_template("index.html")
 
 
 @app.route("/reset", methods=["POST"])
