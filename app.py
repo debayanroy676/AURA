@@ -260,32 +260,59 @@ def health_check():
 
 
 @app.route("/upload", methods=["POST"])
+@app.route("/upload", methods=["POST"])
 def upload_file():
     try:
         file = request.files.get("file")
         if not file:
             return jsonify({"error": "No file uploaded"}), 400
-
         filename = (file.filename or "").lower()
         ext = os.path.splitext(filename)[1]
         file_bytes = file.read()
-
         if not file_bytes:
             return jsonify({"error": "Empty file"}), 400
-
         doc_id = uuid.uuid4().hex
-
         if ext == ".pdf":
             process_pdf_fast(file_bytes, filename, doc_id)
             return jsonify({"message": "PDF processed", "file_id": doc_id})
+        elif ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp"]:
+            try:
+                img = Image.open(BytesIO(file_bytes))
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                if max(img.size) > 2000:
+                    img.thumbnail((2000, 2000), Image.Resampling.LANCZOS)
+                img_bytes = encode_jpeg(img)
+                extracted_text = ocr_single_page(img_bytes)
+                if not extracted_text.strip():
+                    return jsonify({"error": "No text found in image"}), 400
+                clean_text_content = clean_text(extracted_text)
+                chunks = [clean_text(c) for c in chunk_text(clean_text_content) if clean_text(c)]
+                chunks = [c for c in chunks if len(c.split()) >= 10]  
+                if not chunks:
+                    return jsonify({"error": "Insufficient text extracted from image"}), 400
+                chroma_client, collection = get_chroma()
+                ids = [f"{doc_id}_{uuid.uuid4().hex}" for _ in chunks]
+                metas = [{"source": filename, "doc_id": doc_id, "type": "image"} for _ in chunks]
+                vecs = embed_texts(chunks)
+                
+                collection.add(ids=ids, documents=chunks, metadatas=metas, embeddings=vecs)
+                
+                return jsonify({
+                    "message": f"Image processed - extracted {len(chunks)} text chunks", 
+                    "file_id": doc_id
+                })
+                
+            except Exception as img_error:
+                logging.exception(f"Image processing failed: {img_error}")
+                return jsonify({"error": f"Image processing failed: {str(img_error)}"}), 500
 
-        return jsonify({"error": "Unsupported file type"}), 400
+        return jsonify({"error": f"Unsupported file type: {ext}"}), 400
 
     except Exception as e:
         logging.exception("UPLOAD FAILED")
         return jsonify({"error": f"Upload failed: {str(e)}"}), 500
-
-
+        
 @app.route("/", methods=["GET", "POST"])
 def home():
     if request.method == "POST":
