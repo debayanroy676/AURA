@@ -419,4 +419,4 @@ if __name__ == "__main__":
         logging.warning(f"Multiple workers ({workers}) with PersistentClient may cause database lock issues.")
         logging.warning("Consider using ChromaDB server mode or reducing to 1 worker.")
     
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=5000, debug=False)
