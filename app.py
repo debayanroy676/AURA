@@ -12,6 +12,9 @@ import pymupdf
 import hashlib
 from functools import lru_cache
 import base64
+import time
+import atexit
+from threading import Lock
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 load_dotenv()
@@ -28,11 +31,10 @@ app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024
 
 KB_PATH = os.getenv("CHROMA_PATH", "/tmp/aura_chroma")
 os.makedirs(KB_PATH, exist_ok=True)
-
-chroma_client = chromadb.PersistentClient(path=KB_PATH)
-collection = chroma_client.get_or_create_collection("aura_docs")
-
-logging.info(f"Chroma initialized at: {KB_PATH}")
+_chroma_client = None
+_collection = None
+_chroma_init_lock = Lock()
+logging.info(f"ChromaDB path configured at: {KB_PATH}")
 
 system_prompt = """
 You are AURA — Academic Unified Research Agent.
@@ -151,6 +153,8 @@ def ocr_single_page(img_bytes: bytes) -> str:
 
 
 def process_pdf_fast(pdf_bytes, filename, doc_id):
+    chroma_client, collection = get_chroma()
+    
     pdf = pymupdf.open(stream=pdf_bytes, filetype="pdf")
     total_pages = pdf.page_count
     total = min(total_pages, 10)
@@ -209,9 +213,50 @@ def process_pdf_fast(pdf_bytes, filename, doc_id):
     collection.add(ids=ids, documents=chunks, metadatas=metas, embeddings=vecs)
     pdf.close()
 
+
+def get_chroma():
+    global _chroma_client, _collection
+    
+    if _chroma_client is not None and _collection is not None:
+        return _chroma_client, _collection
+    
+    with _chroma_init_lock:
+        if _chroma_client is not None and _collection is not None:
+            return _chroma_client, _collection
+        
+        retries = 5
+        for attempt in range(retries):
+            try:
+                _chroma_client = chromadb.PersistentClient(path=KB_PATH)
+                _collection = _chroma_client.get_or_create_collection("aura_docs")
+                logging.info(f"ChromaDB initialized at: {KB_PATH}")
+                break
+            except Exception as e:
+                if attempt < retries - 1 and ("locked" in str(e).lower() or "already exists" in str(e).lower()):
+                    wait_time = 0.2 * (2 ** attempt)
+                    logging.warning(f"ChromaDB initialization attempt {attempt + 1} failed: {e}. Retrying in {wait_time:.2f}s...")
+                    time.sleep(wait_time)
+                else:
+                    logging.error(f"Failed to initialize ChromaDB after {retries} attempts: {e}")
+                    raise RuntimeError(f"Failed to initialize ChromaDB: {e}")
+        
+        return _chroma_client, _collection
+
+
 @app.route("/health", methods=["GET"])
 def health_check():
-    return jsonify({"status": "healthy", "service": "AURA"}), 200
+    try:
+        chroma_client, collection = get_chroma()
+        chroma_status = "connected"
+    except Exception as e:
+        chroma_status = f"error: {str(e)}"
+    
+    return jsonify({
+        "status": "healthy", 
+        "service": "AURA",
+        "chromadb": chroma_status,
+        "gemini": "enabled" if client else "disabled"
+    }), 200
 
 
 @app.route("/upload", methods=["POST"])
@@ -265,6 +310,8 @@ def home():
             return jsonify({"message": f"Embedding error: {str(e)}"}), 500
 
         try:
+            chroma_client, collection = get_chroma()
+            
             if doc_id:
                 res = collection.query(
                     query_embeddings=[qvec],
@@ -331,16 +378,45 @@ Rules:
 
 @app.route("/reset", methods=["POST"])
 def reset():
-    global collection
     try:
-        chroma_client.delete_collection("aura_docs")
-    except Exception:
-        logging.exception("delete_collection failed (ignored)")
+        chroma_client, collection = get_chroma()
+        try:
+            chroma_client.delete_collection("aura_docs")
+        except Exception as e:
+            logging.warning(f"Delete collection failed (may not exist): {e}")
+        global _collection
+        _collection = chroma_client.get_or_create_collection("aura_docs")
+        return jsonify({"message": "Knowledge base reset"})
+    except Exception as e:
+        logging.exception("Reset failed")
+        return jsonify({"error": f"Reset failed: {str(e)}"}), 500
 
-    collection = chroma_client.get_or_create_collection("aura_docs")
-    return jsonify({"message": "Knowledge base reset"})
+
+def cleanup_chroma():
+    global _chroma_client
+    if _chroma_client:
+        try:
+            pass
+        except:
+            pass
+        finally:
+            _chroma_client = None
+
+atexit.register(cleanup_chroma)
 
 
 if __name__ == "__main__":
+    if os.environ.get("WERKZEUG_RUN_MAIN") != "true":  
+        try:
+            get_chroma()
+        except Exception as e:
+            logging.error(f"Failed to pre-initialize ChromaDB: {e}")
+    
     port = int(os.environ.get("PORT", 8080))
+    workers = int(os.environ.get("GUNICORN_WORKERS", 1))
+    
+    if workers > 1:
+        logging.warning(f"Multiple workers ({workers}) with PersistentClient may cause database lock issues.")
+        logging.warning("Consider using ChromaDB server mode or reducing to 1 worker.")
+    
     app.run(host="0.0.0.0", port=port, debug=False)
