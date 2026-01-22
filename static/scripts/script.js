@@ -60,18 +60,17 @@ function escapeHTML(str) {
   return div.innerHTML;
 }
 
-async function typewriterEffect(element, text, speed = 15, onComplete = null) {
+async function typewriterEffect(element, text, speed = 30) {
   if (isTyping) return;
   isTyping = true;
   
-  // Clear the element first
   element.innerHTML = '';
   
   let i = 0;
   const content = text || "";
   
-  // Create a text node for the content
   const tempDiv = document.createElement('div');
+  tempDiv.style.display = 'none';
   if (window.marked) {
     tempDiv.innerHTML = marked.parse(content, {
       breaks: true,
@@ -81,156 +80,103 @@ async function typewriterEffect(element, text, speed = 15, onComplete = null) {
     tempDiv.textContent = content;
   }
   
-  // Get all text nodes from the parsed content
-  const walker = document.createTreeWalker(
-    tempDiv,
-    NodeFilter.SHOW_TEXT,
-    null,
-    false
-  );
+  const htmlContent = tempDiv.innerHTML;
   
-  const textNodes = [];
-  let node;
-  while (node = walker.nextNode()) {
-    textNodes.push(node);
-  }
+  const cursor = document.createElement('span');
+  cursor.className = 'typewriter-cursor';
+  cursor.innerHTML = '▌';
   
-  if (textNodes.length === 0) {
-    // No text nodes found, just set the content
-    element.innerHTML = tempDiv.innerHTML;
-    isTyping = false;
-    if (onComplete) onComplete();
-    return;
-  }
+  element.appendChild(cursor);
+  scrollChat();
   
-  // Create a clone of the structure without text
-  const structureClone = tempDiv.cloneNode(true);
-  const structureWalker = document.createTreeWalker(
-    structureClone,
-    NodeFilter.SHOW_TEXT,
-    null,
-    false
-  );
-  
-  // Clear all text in the clone
-  while (node = structureWalker.nextNode()) {
-    node.textContent = '';
-  }
-  
-  // Start with the empty structure
-  element.innerHTML = structureClone.innerHTML;
-  
-  // Function to add text gradually
-  function addNextChar() {
-    if (i < textNodes.length) {
-      const currentNode = textNodes[i];
-      const structureWalker2 = document.createTreeWalker(
-        element,
-        NodeFilter.SHOW_TEXT,
-        null,
-        false
-      );
+  function typeChar() {
+    if (i < htmlContent.length) {
+      if (cursor.parentNode) {
+        cursor.remove();
+      }
+      const chunkSize = Math.random() > 0.7 ? 3 : 1; 
+      const end = Math.min(i + chunkSize, htmlContent.length);
+      const chunk = htmlContent.substring(i, end);
+      const chunkDiv = document.createElement('div');
+      chunkDiv.innerHTML = element.innerHTML + chunk;
+      element.innerHTML = chunkDiv.innerHTML;
       
-      let currentIndex = 0;
-      let targetNode = null;
+      element.appendChild(cursor);
       
-      // Find the corresponding text node in the DOM
-      while (node = structureWalker2.nextNode()) {
-        if (currentIndex === i) {
-          targetNode = node;
-          break;
-        }
-        currentIndex++;
+      i = end;
+      scrollChat();
+      
+      let delay = speed;
+      const nextChar = htmlContent.charAt(i);
+      
+      if (nextChar === '.' || nextChar === '!' || nextChar === '?') {
+        delay = speed * 4;
+      } else if (nextChar === ',' || nextChar === ';' || nextChar === ':') {
+        delay = speed * 2;
+      } else if (nextChar === '\n') {
+        delay = speed * 1.5;
       }
       
-      if (targetNode) {
-        const targetText = currentNode.textContent;
-        let charIndex = 0;
-        
-        function typeChar() {
-          if (charIndex < targetText.length) {
-            targetNode.textContent += targetText.charAt(charIndex);
-            charIndex++;
-            scrollChat();
-            
-            // Speed variation for punctuation
-            let delay = speed;
-            const nextChar = targetText.charAt(charIndex);
-            
-            if (nextChar === '.' || nextChar === '!' || nextChar === '?') {
-              delay = speed * 3; // Pause longer at sentence ends
-            } else if (nextChar === ',' || nextChar === ';' || nextChar === ':') {
-              delay = speed * 2;
-            } else if (nextChar === ' ' || nextChar === '\n') {
-              delay = speed / 2; // Faster for spaces
-            }
-            
-            setTimeout(typeChar, delay);
-          } else {
-            i++;
-            scrollChat();
-            setTimeout(addNextChar, speed * 2); // Small pause between nodes
-          }
-        }
-        
-        typeChar();
-      } else {
-        i++;
-        addNextChar();
-      }
+      setTimeout(typeChar, delay);
     } else {
+      if (cursor.parentNode) {
+        cursor.remove();
+      }
       isTyping = false;
-      // Render math after typing is complete
       setTimeout(() => {
         renderMath();
-        if (onComplete) onComplete();
       }, 100);
     }
   }
-  
-  addNextChar();
-}
-
-function setBubbleContent(bubbleEl, text, who = "bot", useTypewriter = true) {
-  const msg = text || "";
-  
-  if (who === "bot" && useTypewriter && !isTyping) {
-    // Start with empty content
-    bubbleEl.innerHTML = '';
-    // Start typewriter effect
-    typewriterEffect(bubbleEl, msg);
-  } else {
-    if (who === "bot" && window.marked) {
-      bubbleEl.innerHTML = marked.parse(msg, {
-        breaks: true,
-        gfm: true
-      });
-      setTimeout(() => renderMath(), 50);
-    } else {
-      bubbleEl.innerHTML = escapeHTML(msg);
-    }
-  }
-  
-  scrollChat();
+  setTimeout(typeChar, 200);
 }
 
 function addBubble(text, who = "bot", useTypewriter = true) {
   const bubble = document.createElement("div");
   bubble.className = `bubble ${who}`;
-  
+  chatBody.appendChild(bubble);
   if (who === "bot" && useTypewriter) {
-    // For typewriter effect, start empty
     bubble.innerHTML = '';
     setTimeout(() => {
       typewriterEffect(bubble, text);
     }, 100);
   } else {
-    setBubbleContent(bubble, text, who, false);
+    if (who === "bot" && window.marked) {
+      bubble.innerHTML = marked.parse(text, {
+        breaks: true,
+        gfm: true
+      });
+      setTimeout(() => renderMath(), 50);
+    } else {
+      bubble.innerHTML = escapeHTML(text);
+    }
   }
   
+  scrollChat();
+  return bubble;
+}
+
+function showTypingIndicator() {
+  const bubble = document.createElement("div");
+  bubble.className = "bubble bot";
+  bubble.id = "typing-indicator";
+  bubble.innerHTML = `
+    <div class="typing-dots">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+  `;
   chatBody.appendChild(bubble);
   scrollChat();
   return bubble;
+}
+
+function removeTypingIndicator() {
+  const indicator = document.getElementById("typing-indicator");
+  if (indicator) {
+    indicator.remove();
+  }
 }
 
 async function safeJson(res) {
@@ -335,14 +281,11 @@ uploadBtn.addEventListener("click", async () => {
           } catch (e) {
             console.error("Upload response JSON parse error:", e);
             console.error("Raw response:", xhr.responseText);
-            setBubbleContent(
-              infoBubble,
+            infoBubble.innerHTML = marked.parse(
               "Upload failed (server returned invalid JSON)\n\n```\n" +
               xhr.responseText.slice(0, 800) +
               (xhr.responseText.length > 800 ? "\n...(truncated)" : "") +
-              "\n```",
-              "bot",
-              false
+              "\n```"
             );
             setStatus("Upload failed");
             progressBar.style.width = "0%";
@@ -351,12 +294,7 @@ uploadBtn.addEventListener("click", async () => {
           
           if (!data.file_id) {
             console.error("Missing file_id in response:", data);
-            setBubbleContent(
-              infoBubble,
-              "Upload failed: Server response missing file_id",
-              "bot",
-              false
-            );
+            infoBubble.innerHTML = marked.parse("Upload failed: Server response missing file_id");
             setStatus("Upload failed");
             progressBar.style.width = "0%";
             return;
@@ -370,12 +308,10 @@ uploadBtn.addEventListener("click", async () => {
           progressBar.style.width = "100%";
           setStatus("Upload complete");
           
-          setBubbleContent(
-            infoBubble,
-            `**Document processed successfully!**\n\n${data.message || "Document indexed into knowledge base. You can now ask questions about it."}`,
-            "bot",
-            true
+          infoBubble.innerHTML = marked.parse(
+            `**Document processed successfully!**\n\n${data.message || "Document indexed into knowledge base. You can now ask questions about it."}`
           );
+          renderMath();
           
           setTimeout(() => {
             uploadPanel.classList.remove("open");
@@ -391,7 +327,8 @@ uploadBtn.addEventListener("click", async () => {
           } catch (e) {
             errorMsg = xhr.responseText;
           }
-          setBubbleContent(infoBubble, `Upload failed:\n\n${errorMsg}`, "bot", false);
+          infoBubble.innerHTML = marked.parse(`Upload failed:\n\n${errorMsg}`);
+          renderMath();
         }
       } finally {
         isUploading = false;
@@ -404,19 +341,23 @@ uploadBtn.addEventListener("click", async () => {
     xhr.onerror = () => {
       setStatus("Upload error");
       progressBar.style.width = "0%";
-      setBubbleContent(infoBubble, "Network error during upload. Please check your connection.", "bot", false);
+      infoBubble.innerHTML = marked.parse("Network error during upload. Please check your connection.");
+      renderMath();
       isUploading = false;
       uploadBtn.disabled = false;
       uploadBtn.textContent = "Upload & Index";
       cancelUploadBtn.style.display = "none";
     };
     
+    const formData = new FormData();
+    formData.append("file", selectedFile);
     xhr.send(formData);
   } catch (err) {
     console.error("Upload exception:", err);
     setStatus("Upload error");
     progressBar.style.width = "0%";
-    setBubbleContent(infoBubble, `Upload error:\n\n${String(err)}`, "bot", false);
+    infoBubble.innerHTML = marked.parse(`Upload error:\n\n${String(err)}`);
+    renderMath();
     isUploading = false;
     uploadBtn.disabled = false;
     uploadBtn.textContent = "Upload & Index";
@@ -441,33 +382,8 @@ async function sendMessage() {
   promptInput.style.height = "auto";
   setStatus("Thinking...");
   
-  const loading = addBubble("", "bot", false);
-  loading.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
-  
-  // Add typing indicator styles
-  const style = document.createElement('style');
-  style.textContent = `
-    .typing-indicator {
-      display: flex;
-      gap: 4px;
-      padding: 4px 0;
-    }
-    .typing-indicator span {
-      width: 6px;
-      height: 6px;
-      background: rgba(180, 92, 255, 0.7);
-      border-radius: 50%;
-      display: inline-block;
-      animation: typingBounce 1.4s ease-in-out infinite;
-    }
-    .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-    @keyframes typingBounce {
-      0%, 60%, 100% { transform: translateY(0); }
-      30% { transform: translateY(-6px); }
-    }
-  `;
-  document.head.appendChild(style);
+  // Show typing indicator
+  const typingBubble = showTypingIndicator();
   
   try {
     const payload = {
@@ -486,39 +402,42 @@ async function sendMessage() {
     const data = await safeJson(res);
     console.log("Received response:", data);
     
-    // Remove typing indicator
-    style.remove();
+    removeTypingIndicator();
     
     if (!data.ok) {
-      setBubbleContent(
-        loading,
+      addBubble(
         `**Error (${data.status})**\n\n${data.message || data.error || "Unknown server error"}`,
         "bot",
-        true
+        false
       );
       setStatus("Error");
+      isSending = false;
+      sendBtn.disabled = false;
+      sendBtn.textContent = "Send";
       return;
     }
     
     if (!data.message && !data.response) {
       console.error("Invalid response format:", data);
-      setBubbleContent(
-        loading,
+      addBubble(
         "**Error**: Server returned invalid response format",
         "bot",
-        true
+        false
       );
       setStatus("Error");
+      isSending = false;
+      sendBtn.disabled = false;
+      sendBtn.textContent = "Send";
       return;
     }
     
-    setBubbleContent(loading, data.message || data.response || "No response", "bot", true);
+    addBubble(data.message || data.response || "No response", "bot", true);
     setStatus("Ready");
+    
   } catch (e) {
     console.error("Send message error:", e);
-    // Remove typing indicator
-    style.remove();
-    setBubbleContent(loading, `**Network Error**\n\n${String(e)}`, "bot", true);
+    removeTypingIndicator();
+    addBubble(`**Network Error**\n\n${String(e)}`, "bot", false);
     setStatus("Error");
   } finally {
     isSending = false;
@@ -556,17 +475,16 @@ resetBtn.addEventListener("click", async () => {
     const data = await safeJson(res);
     
     if (!data.ok) {
-      setBubbleContent(
-        bubble,
-        `**Reset failed (${data.status})**\n\n${data.message || data.error || "Unknown error"}`,
-        "bot",
-        true
+      bubble.innerHTML = marked.parse(
+        `**Reset failed (${data.status})**\n\n${data.message || data.error || "Unknown error"}`
       );
+      renderMath();
       setStatus("Error");
       return;
     }
     
-    setBubbleContent(bubble, `${data.message || "Knowledge base reset successfully"}`, "bot", true);
+    bubble.innerHTML = marked.parse(`${data.message || "Knowledge base reset successfully"}`);
+    renderMath();
     fileId = null;
     fileIdEl.textContent = "file_id: —";
     kbBadge.textContent = "KB: Empty";
@@ -578,7 +496,8 @@ resetBtn.addEventListener("click", async () => {
     setStatus("Ready");
   } catch (e) {
     console.error("Reset error:", e);
-    setBubbleContent(bubble, `**Reset failed**\n\n${String(e)}`, "bot", true);
+    bubble.innerHTML = marked.parse(`**Reset failed**\n\n${String(e)}`);
+    renderMath();
     setStatus("Error");
   }
 });
@@ -596,6 +515,45 @@ window.addEventListener("load", () => {
   renderMath();
 });
 
+const style = document.createElement('style');
+style.textContent = `
+  .typewriter-cursor {
+    display: inline;
+    animation: blink 1s infinite;
+    color: rgba(39, 214, 255, 0.9);
+    font-weight: bold;
+  }
+  
+  @keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+  }
+  
+  .typing-dots {
+    display: flex;
+    gap: 4px;
+    padding: 4px 0;
+  }
+  
+  .typing-dots span {
+    width: 6px;
+    height: 6px;
+    background: rgba(180, 92, 255, 0.7);
+    border-radius: 50%;
+    display: inline-block;
+    animation: typingBounce 1.4s ease-in-out infinite;
+  }
+  
+  .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+  
+  @keyframes typingBounce {
+    0%, 60%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-6px); }
+  }
+`;
+document.head.appendChild(style);
+
 let touchStartY = 0;
 document.addEventListener('touchstart', (e) => {
   touchStartY = e.touches[0].clientY;
@@ -609,23 +567,3 @@ document.addEventListener('touchmove', (e) => {
     e.preventDefault();
   }
 }, { passive: false });
-
-// Add CSS for the typing cursor effect
-const cursorStyle = document.createElement('style');
-cursorStyle.textContent = `
-  @keyframes blink {
-    0%, 50% { opacity: 1; }
-    51%, 100% { opacity: 0; }
-  }
-  
-  .typewriter-cursor {
-    display: inline-block;
-    width: 2px;
-    background: rgba(39, 214, 255, 0.9);
-    margin-left: 1px;
-    animation: blink 1s infinite;
-    vertical-align: baseline;
-    height: 1.2em;
-  }
-`;
-document.head.appendChild(cursorStyle);
