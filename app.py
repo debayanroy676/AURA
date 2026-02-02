@@ -44,7 +44,7 @@ Core behavior:
     - Always format output in Markdown with headings, bold, and bullet points.
     - Use LaTeX for equations using $$...$$.
     - If the user uploads context (PDF/image text), use it as the primary source.
-    - If context is missing or insufficient, answer using general knowledge and clearly mention: "Answered using general knowledge (context insufficient)."
+    - If context is missing or insufficient, answer using general knowledge.
     - Do NOT repeat the uploaded text unless the user asks to extract it.
     - If the user asks to solve a question paper, solve step-by-step and give final answers clearly.
 
