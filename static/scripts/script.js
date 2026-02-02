@@ -66,21 +66,8 @@ async function typewriterEffect(element, text, speed = 30) {
   
   element.innerHTML = '';
   
-  let i = 0;
   const content = text || "";
-  
-  const tempDiv = document.createElement('div');
-  tempDiv.style.display = 'none';
-  if (window.marked) {
-    tempDiv.innerHTML = marked.parse(content, {
-      breaks: true,
-      gfm: true
-    });
-  } else {
-    tempDiv.textContent = content;
-  }
-  
-  const htmlContent = tempDiv.innerHTML;
+  let i = 0;
   
   const cursor = document.createElement('span');
   cursor.className = 'typewriter-cursor';
@@ -89,17 +76,28 @@ async function typewriterEffect(element, text, speed = 30) {
   element.appendChild(cursor);
   scrollChat();
   
+  const markdownContainer = document.createElement('div');
+  markdownContainer.style.display = 'none';
+  
   function typeChar() {
-    if (i < htmlContent.length) {
+    if (i < content.length) {
       if (cursor.parentNode) {
         cursor.remove();
       }
-      const chunkSize = Math.random() > 0.7 ? 3 : 1; 
-      const end = Math.min(i + chunkSize, htmlContent.length);
-      const chunk = htmlContent.substring(i, end);
-      const chunkDiv = document.createElement('div');
-      chunkDiv.innerHTML = element.innerHTML + chunk;
-      element.innerHTML = chunkDiv.innerHTML;
+      const chunkSize = Math.random() > 0.7 ? 3 : 1;
+      const end = Math.min(i + chunkSize, content.length);
+      const chunk = content.substring(i, end);
+      
+      markdownContainer.textContent += chunk;
+      
+      if (window.marked) {
+        element.innerHTML = marked.parse(markdownContainer.textContent, {
+          breaks: true,
+          gfm: true
+        });
+      } else {
+        element.textContent = markdownContainer.textContent;
+      }
       
       element.appendChild(cursor);
       
@@ -107,7 +105,7 @@ async function typewriterEffect(element, text, speed = 30) {
       scrollChat();
       
       let delay = speed;
-      const nextChar = htmlContent.charAt(i);
+      const nextChar = content.charAt(i);
       
       if (nextChar === '.' || nextChar === '!' || nextChar === '?') {
         delay = speed * 4;
@@ -122,12 +120,23 @@ async function typewriterEffect(element, text, speed = 30) {
       if (cursor.parentNode) {
         cursor.remove();
       }
+      
+      if (window.marked) {
+        element.innerHTML = marked.parse(content, {
+          breaks: true,
+          gfm: true
+        });
+      } else {
+        element.textContent = content;
+      }
+      
       isTyping = false;
       setTimeout(() => {
         renderMath();
       }, 100);
     }
   }
+  
   setTimeout(typeChar, 200);
 }
 
