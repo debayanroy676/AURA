@@ -258,8 +258,6 @@ def health_check():
         "gemini": "enabled" if client else "disabled"
     }), 200
 
-
-@app.route("/upload", methods=["POST"])
 @app.route("/upload", methods=["POST"])
 def upload_file():
     try:
