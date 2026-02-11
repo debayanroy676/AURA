@@ -249,7 +249,7 @@ For issues and feature requests, please use the [GitHub Issues](https://github.c
 - **Dependencies**: 10+ Python packages
 - **Supported Formats**: PDF, JPG, PNG, WEBP, BMP
 - **Processing Speed**: ~1-2 pages/second (with OCR)
-- **Max File Size**: 1GB
+- **Max File Size**: 10MB
 - **Embedding Dimension**: 768 (text-embedding-004)
 
 ---
